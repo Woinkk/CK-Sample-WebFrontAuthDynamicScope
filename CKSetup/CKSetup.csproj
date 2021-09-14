@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <!--First, the CKSetup tool defined in ../.config/dotnet-tools.json is restored (if needed).-->
+    <Exec Command="dotnet tool restore" />
+    <!--
+      Then, the CKSetup tool is ran, using a 'Release' log level for the Console that avoids too much noise in your "Build Output" window.
+      The file (LastRun.log) doesn't filter the logs: it will contain all the logs emitted by the process and the default level is driven
+      by the CKSetup.xml <LogLevel>Debug</LogLevel> element.
+
+      Note that each WorkingDirectory still contains its own CKSetup.log.
+     -->
+    <Delete Files="LastRun.log" />
+    <Exec Command="dotnet cksetup run CKSetup.xml -v Release --logFile LastRun.log" />
+  </Target>
+
+  <!-- Declaring dependencies here enables change detection in source projects and automatic code source regeneration into the .Web projects. -->
+  <ItemGroup>
+    <ProjectReference Include="..\CK.WebFrontAuthDynamicScope.App\CK.WebFrontAuthDynamicScope.App.csproj" />
+  </ItemGroup>
+
+</Project>
