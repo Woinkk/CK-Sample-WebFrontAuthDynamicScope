@@ -7,7 +7,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.WebFrontAuthDynamicScope
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.WebFrontAuthDynamicScope.App", "CK.WebFrontAuthDynamicScope.App\CK.WebFrontAuthDynamicScope.App.csproj", "{C2227B9A-AFF1-40F9-9A16-9C2238886BFF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CKSetup", "CKSetup\CKSetup.csproj", "{86754BAB-18AD-4E77-A27E-75B119E9A270}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CKSetup", "CKSetup\CKSetup.csproj", "{86754BAB-18AD-4E77-A27E-75B119E9A270}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{2D91FE86-6779-474D-8936-5BFBC4B4B826}"
+	ProjectSection(SolutionItems) = preProject
+		Readme.md = Readme.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
