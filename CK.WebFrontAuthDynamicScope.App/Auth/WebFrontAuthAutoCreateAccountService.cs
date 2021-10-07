@@ -1,12 +1,11 @@
-﻿using CK.AspNet.Auth;
+using CK.AspNet.Auth;
 using CK.Auth;
 using CK.Core;
 using CK.DB.Actor;
-using CK.DB.Actor.ActorEMail;
+//using CK.DB.Actor.ActorEMail;
 using CK.DB.Auth;
 using CK.DB.User.UserFacebook;
 using CK.DB.User.UserGoogle;
-using CK.DB.User.UserPassword;
 using CK.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -21,9 +20,6 @@ namespace CK.WebFrontAuthDynamicScope.App
         private readonly UserTable _userTable;
         private readonly UserGoogleTable _userGoogleTable;
         private readonly UserFacebookTable _userFacebookTable;
-        private readonly UserPasswordTable _userPasswordTable;
-        private readonly ActorEMailTable _actorEMailTable;
-        private readonly GroupTable _groupTable;
         private readonly IAuthenticationTypeSystem _authenticationTypeSystem;
         private readonly IAuthenticationDatabaseService _authenticationDatabaseService;
 
@@ -31,21 +27,15 @@ namespace CK.WebFrontAuthDynamicScope.App
             UserTable userTable,
             UserGoogleTable userGoogleTable,
             UserFacebookTable userFacebookTable,
-            ActorEMailTable actorEMailTable,
-            GroupTable groupTable,
             IAuthenticationTypeSystem authenticationTypeSystem,
-            IAuthenticationDatabaseService authenticationDatabaseService,
-            UserPasswordTable userPasswordTable
+            IAuthenticationDatabaseService authenticationDatabaseService
         )
         {
             _userTable = userTable;
             _authenticationTypeSystem = authenticationTypeSystem;
             _authenticationDatabaseService = authenticationDatabaseService;
-            _actorEMailTable = actorEMailTable;
-            _groupTable = groupTable;
             _userGoogleTable = userGoogleTable;
             _userFacebookTable = userFacebookTable;
-            _userPasswordTable = userPasswordTable;
         }
 
         public async Task<UserLoginResult> CreateAccountAndLoginAsync(IActivityMonitor monitor, IWebFrontAuthAutoCreateAccountContext context)
@@ -63,11 +53,6 @@ namespace CK.WebFrontAuthDynamicScope.App
 
                 // Associate GoogleAccountId
                 await _userGoogleTable.CreateOrUpdateGoogleUserAsync(ctx, 1, userId, userGoogleInfo, UCLMode.CreateOnly);
-
-                // Associate e-mail from Username
-                await _actorEMailTable.AddEMailAsync(ctx, 1, userId,
-                    userGoogleInfo.EMail ?? userGoogleInfo.UserName,
-                    true, true);
 
                 // Read user
                 var userAuthInfo = await _authenticationDatabaseService.ReadUserAuthInfoAsync(ctx, 1, userId);
@@ -87,11 +72,6 @@ namespace CK.WebFrontAuthDynamicScope.App
 
                 // Associate FacebookAccountId
                 await _userFacebookTable.CreateOrUpdateFacebookUserAsync(ctx, 1, userId, userFacebookInfo, UCLMode.CreateOrUpdate);
-
-                // Associate e-mail from Username
-                await _actorEMailTable.AddEMailAsync(ctx, 1, userId,
-                    userFacebookInfo.EMail ?? userFacebookInfo.UserName,
-                    true, true);
 
                 // Read user
                 var userAuthInfo = await _authenticationDatabaseService.ReadUserAuthInfoAsync(ctx, 1, userId);
