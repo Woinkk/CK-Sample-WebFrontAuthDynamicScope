@@ -17,6 +17,7 @@ using CK.SqlServer;
 using System.Collections.ObjectModel;
 using Newtonsoft.Json.Linq;
 using CK.WebFrontAuthDynamicScope.App.Services;
+using CK.DB.User.UserGoogle;
 
 namespace CK.WebFrontAuthDynamicScope.App
 
@@ -119,41 +120,50 @@ namespace CK.WebFrontAuthDynamicScope.App
                     o.ClientSecret = _configuration["Authentication:Google:ClientSecret"];
                     o.SaveTokens = true;
 
-                    o.Events.OnRemoteFailure = f => f.WebFrontAuthRemoteFailureAsync();
+                    o.Events.OnRemoteFailure = f =>
+                    {
+                        return f.WebFrontAuthOnRemoteFailureAsync( setUnsafeLevel: true );
+                    };
 
-                    // Google package filters the original claims to standard ones, but "email_verified" and "pictures" are lost.
-                    // This is why here, we intercept the early ticket creation and save the fields in the AuthenticationProperties.Parameters.
-                    // (Parameters are a simple Dictionary<string,object> that is transient, as opposed to the Items that are persisted and follow
-                    // the whole authentication flow).
                     o.Events.OnCreatingTicket = c =>
                     {
-                        //c.Properties.Parameters["picture"] = (string)c.User["picture"];
-                        //c.Properties.Parameters["verified_email"] = (string)c.User["verified_email"];
                         return Task.CompletedTask;
+                    };
+
+                    // Google is weird. When we do not accept any scopes google send back an access denied so for that case we have to
+                    // check scopes on the event OnAccessDenied and keep the current authentication if we are already authenticated.
+                    o.Events.OnAccessDenied = async ( c ) =>
+                    {
+                        var authInfo = c.GetTicketAuthenticationInfo();
+                        if( authInfo.Level != AuthLevel.None )
+                        {
+                            string? accessToken = null;
+                            // Get the service meant to check and update scopes for a user.
+                            CheckScopesServices checkScopesServices = c.HttpContext.RequestServices.GetRequiredService<CheckScopesServices>();
+                            await checkScopesServices.CheckAndUpdateGoogleScopesAsync( _startupMonitor, c.HttpContext, authInfo, accessToken );
+                        }
+                        await c.WebFrontAuthOnAccessDeniedAsync();
                     };
 
 
                     o.Events.OnTicketReceived = async c => 
                     {
-                        await c.WebFrontAuthRemoteAuthenticateAsync<IUserGoogleInfo>( payload =>
+                        await c.WebFrontAuthOnTicketReceivedAsync<IUserGoogleInfo>( payload =>
                         {
                             payload.GoogleAccountId = c.Principal.FindFirst( ClaimTypes.NameIdentifier ).Value;
-                            payload.EMail = c.Principal.FindFirst( ClaimTypes.Email ).Value;
-                            payload.FirstName = c.Principal.FindFirst( ClaimTypes.GivenName )?.Value;
-                            payload.LastName = c.Principal.FindFirst( ClaimTypes.Surname )?.Value;
-                            payload.UserName = c.Principal.FindFirst( ClaimTypes.Name )?.Value;
-                            payload.EMailVerified = (string)c.Properties.Parameters.GetValueWithDefault( "verified_email", null ) == "True";
+                            payload.FirstName = c.Principal.FindFirst( ClaimTypes.GivenName ).Value;
+                            payload.LastName = c.Principal.FindFirst( ClaimTypes.Surname ).Value;
+                            payload.UserName = c.Principal.FindFirst( ClaimTypes.Name ).Value;
                         });
 
                         // Get the current auth info.
-                        var authInfo = c.HttpContext.WebFrontAuthenticate();
-                        if( authInfo.User.UserId != 0 )
+                        var authInfo = c.HttpContext.GetAuthenticationInfo();
+                        if( authInfo.Level != AuthLevel.None )
                         {
                             string accessToken = c.Properties.Items[".Token.access_token"];
-
                             // Get the service meant to check and update scopes for a user.
                             CheckScopesServices checkScopesServices = c.HttpContext.RequestServices.GetRequiredService<CheckScopesServices>();
-                            checkScopesServices.CheckAndUpdateGoogleScopesAsync( _startupMonitor, c.HttpContext, authInfo, accessToken );
+                            await checkScopesServices.CheckAndUpdateGoogleScopesAsync( _startupMonitor, c.HttpContext, authInfo, accessToken );
                         }
                     };
                 })
@@ -161,36 +171,40 @@ namespace CK.WebFrontAuthDynamicScope.App
                 {
                     o.AppId = _configuration["Authentication:Facebook:ClientId"];
                     o.AppSecret = _configuration["Authentication:Facebook:ClientSecret"];
-                    o.Events.OnRemoteFailure = f => f.WebFrontAuthRemoteFailureAsync();
+                    o.Events.OnRemoteFailure = f => f.WebFrontAuthOnRemoteFailureAsync();
                     o.SaveTokens = true;
 
                     o.Events.OnTicketReceived = async c =>
                     {
-                        await c.WebFrontAuthRemoteAuthenticateAsync<IUserFacebookInfo>( payload =>
+                        await c.WebFrontAuthOnTicketReceivedAsync<IUserFacebookInfo>( payload =>
                         {
                              payload.FacebookAccountId = c.Principal.FindFirst( ClaimTypes.NameIdentifier ).Value;
-                             payload.UserName = c.Principal.FindFirst( ClaimTypes.Name )?.Value;
-                             // User can decline the "email" scope.
-                             payload.EMail = c.Principal.FindFirst( ClaimTypes.Email )?.Value;
+                             payload.UserName = c.Principal.FindFirst( ClaimTypes.Name ).Value;
                              payload.FirstName = c.Principal.FindFirst( ClaimTypes.GivenName ).Value;
                              payload.LastName = c.Principal.FindFirst( ClaimTypes.Surname ).Value;
                         } );
 
                         // Get the current auth info.
-                        var authInfo = c.HttpContext.WebFrontAuthenticate();
-                        if( authInfo.User.UserId != 0 )
+                        var authInfo = c.HttpContext.GetAuthenticationInfo();
+                        if( authInfo.Level != AuthLevel.None )
                         {
                             string accessToken = c.Properties.Items[".Token.access_token"];
 
                             // Get the service meant to check and update scopes for a user.
                             CheckScopesServices checkScopesServices = c.HttpContext.RequestServices.GetRequiredService<CheckScopesServices>();
-                            checkScopesServices.CheckAndUpdateFacebookScopesAsync( _startupMonitor, c.HttpContext ,authInfo, accessToken );
+                            await checkScopesServices.CheckAndUpdateFacebookScopesAsync( _startupMonitor, c.HttpContext ,authInfo, accessToken );
                         }
                     };
                 })
                 .AddWebFrontAuth(options =>
                 {
                     options.ExpireTimeSpan = TimeSpan.FromDays(1);
+                    options.SchemesCriticalTimeSpan = new Dictionary<string, TimeSpan>
+                    {
+                        { "Basic", new TimeSpan( 0, 5, 0 ) },
+                        { "Google", new TimeSpan( 0, 5, 0 ) },
+                        { "Facebook", new TimeSpan( 0, 5, 0 ) }
+                    };
                 });
 
             services.AddCors();

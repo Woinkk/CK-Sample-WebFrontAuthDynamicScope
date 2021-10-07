@@ -13,6 +13,7 @@ using System.Text;
 using System.Text.Json;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 namespace CK.WebFrontAuthDynamicScope.App.Services
 {
@@ -30,7 +31,7 @@ namespace CK.WebFrontAuthDynamicScope.App.Services
         }
 
         // For the provider Facebook, check which scopes the user has accepted or rejected.
-        public async void CheckAndUpdateFacebookScopesAsync( IActivityMonitor m, HttpContext c, IAuthenticationInfo current, string accessToken )
+        public async Task CheckAndUpdateFacebookScopesAsync( IActivityMonitor m, HttpContext c, IAuthenticationInfo current, string? accessToken )
         {
             using( var ctx = new SqlStandardCallContext() )
             using( HttpClient client = _httpClientFactory.CreateClient() )
@@ -81,53 +82,85 @@ namespace CK.WebFrontAuthDynamicScope.App.Services
         }
 
         // For the provider Google, check which scopes the user has accepted or rejected.
-        public async void CheckAndUpdateGoogleScopesAsync( IActivityMonitor m, HttpContext c, IAuthenticationInfo current, string accessToken )
+        public async Task CheckAndUpdateGoogleScopesAsync( IActivityMonitor m, HttpContext c, IAuthenticationInfo current, string? accessToken )
         {
             using( var ctx = new SqlStandardCallContext() )
             using( HttpClient client = _httpClientFactory.CreateClient() )
             {
                 try
                 {
-                    // Make request to get some user info from the current access token.
-                    HttpResponseMessage httpResponse = await client.GetAsync( $"https://www.googleapis.com/oauth2/v1/tokeninfo?access_token={accessToken}" );
-
-                    // Deserialize the response from the previous api call.
-                    Stream streamResponse = await httpResponse.Content.ReadAsStreamAsync();
-                    GoogleJsonResponse googleResponse = await JsonSerializer.DeserializeAsync<GoogleJsonResponse>( streamResponse );
-
-                    // Get the AuthScopeSet of the current user.
-                    AuthScopeSet? scopeSet = await _googleScope.ReadScopeSetAsync( ctx, current.ActualUser.UserId );
-
-                    // If the AuthScopeSet is empty then we fill it with the default scope set for Google.
-                    if( scopeSet.Count <= 0 )
+                    if (accessToken != null)
                     {
-                        int scopeSetId = scopeSet.ScopeSetId;
-                        scopeSet = await _googleScope.ReadDefaultScopeSetAsync( ctx );
-                        scopeSet.ScopeSetId = scopeSetId;
-                    }
+                        // Make request to get some user info from the current access token.
+                        HttpResponseMessage httpResponse = await client.GetAsync( $"https://www.googleapis.com/oauth2/v1/tokeninfo?access_token={accessToken}" );
 
-                    // Scopes are returned in the form of a string, each scopes are separated by whitespaces.
-                    string[] googleScopesArray = googleResponse.scope.Split( ' ' );
+                        // Deserialize the response from the previous api call.
+                        Stream streamResponse = await httpResponse.Content.ReadAsStreamAsync();
+                        GoogleJsonResponse googleResponse = await JsonSerializer.DeserializeAsync<GoogleJsonResponse>( streamResponse );
 
-                    // For each scopes check if the scope is accepted or rejected by the user and update is AuthScopeSet.
-                    foreach( string scope in googleScopesArray )
-                    {
-                        if( scopeSet.CheckStatus( ScopeWARStatus.Waiting, scope ) )
+                        // Get the AuthScopeSet of the current user.
+                        AuthScopeSet? scopeSet = await _googleScope.ReadScopeSetAsync( ctx, current.ActualUser.UserId );
+
+                        // If the AuthScopeSet is empty then we fill it with the default scope set for Google.
+                        if( scopeSet.Count <= 0 )
                         {
-                            AuthScopeItem authScopeItem = new AuthScopeItem( scope, ScopeWARStatus.Accepted );
-                            scopeSet.Add( authScopeItem );
+                            int scopeSetId = scopeSet.ScopeSetId;
+                            scopeSet = await _googleScope.ReadDefaultScopeSetAsync( ctx );
+                            scopeSet.ScopeSetId = scopeSetId;
                         }
+
+                        // Scopes are returned in the form of a string, each scopes are separated by whitespaces.
+                        string[] googleScopesArray = googleResponse.scope.Split( ' ' );
+
+                        // For each scopes check if the scope is accepted or rejected by the user and update is AuthScopeSet.
+                        foreach( string scope in googleScopesArray )
+                        {
+                            if( scopeSet.CheckStatus( ScopeWARStatus.Waiting, scope ) )
+                            {
+                                AuthScopeItem authScopeItem = new AuthScopeItem( scope, ScopeWARStatus.Accepted );
+                                scopeSet.Add( authScopeItem );
+                            }
+                        }
+
+                        // Google only return scopes accepted by the user.
+                        // For each remaining scopes with the waiting status we put them as rejected.
+                        scopeSet?.Scopes.Where( s => s.Status == ScopeWARStatus.Waiting )
+                            .Select( s => s.ScopeName )
+                            .ToList()
+                            .ForEach( scope => scopeSet.Add( new AuthScopeItem( scope, ScopeWARStatus.Rejected ) ) );
+
+                        // Update database with the updated AuthScopeSet.
+                        await _googleScope.AuthScopeSetTable.AddOrUpdateScopesAsync( ctx, current.ActualUser.UserId, scopeSet );
+                    } else
+                    {
+                        // Get the AuthScopeSet of the current user.
+                        AuthScopeSet? scopeSet = await _googleScope.ReadScopeSetAsync( ctx, current.ActualUser.UserId );
+
+                        // If the AuthScopeSet is empty then we fill it with the default scope set for Google.
+                        if( scopeSet.Count <= 0 )
+                        {
+                            int scopeSetId = scopeSet.ScopeSetId;
+                            scopeSet = await _googleScope.ReadDefaultScopeSetAsync( ctx );
+                            scopeSet.ScopeSetId = scopeSetId;
+                        }
+
+                        // Clone the current AuthScopeSet to be able to go throught the AuthScopeSet of the user and modify it's values.
+                        AuthScopeSet scopeSetCopy = scopeSet.Clone();
+
+                        // For each scopes check if the scope is waiting then put them in rejected and update the AuthScopeSet.
+                        foreach( AuthScopeItem scope in scopeSetCopy.Scopes)
+                        {
+                            if( scopeSet.CheckStatus( ScopeWARStatus.Waiting, scope.ScopeName ) )
+                            {
+                                AuthScopeItem authScopeItem = new AuthScopeItem( scope.ScopeName, ScopeWARStatus.Rejected );
+                                scopeSet.Add( authScopeItem );
+                            }
+                        }
+
+                        // Update database with the updated AuthScopeSet.
+                        await _googleScope.AuthScopeSetTable.AddOrUpdateScopesAsync( ctx, current.ActualUser.UserId, scopeSet );
+
                     }
-
-                    // Google only return scopes accepted by the user.
-                    // For each remaining scopes with the waiting status we put them as rejected.
-                    scopeSet?.Scopes.Where( s => s.Status == ScopeWARStatus.Waiting )
-                        .Select( s => s.ScopeName )
-                        .ToList()
-                        .ForEach( scope => scopeSet.Add( new AuthScopeItem( scope, ScopeWARStatus.Rejected ) ) );
-
-                    // Update database with the updated AuthScopeSet.
-                    await _googleScope.AuthScopeSetTable.AddOrUpdateScopesAsync( ctx, current.ActualUser.UserId, scopeSet );
                 }
                 catch( HttpRequestException e )
                 {
