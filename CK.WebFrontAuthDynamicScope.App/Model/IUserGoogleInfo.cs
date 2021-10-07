@@ -5,14 +5,13 @@ using System.Text;
 namespace CK.WebFrontAuthDynamicScope.App
 {
     /// <summary>
-    /// We use both default "profile" scope and "email".
+    /// We need to use "profile" scope.
     /// </summary>
-    public interface IUserGoogleInfo : CK.DB.User.UserGoogle.EMailColumns.IUserGoogleInfo
+    public interface IUserGoogleInfo : CK.DB.User.UserGoogle.IUserGoogleInfo
     {
         string FirstName { get; set; }
         string LastName { get; set; }
         string UserName { get; set; }
-        string PictureUrl { get; set; }
     }
 
 }
