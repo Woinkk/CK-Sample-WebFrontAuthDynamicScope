@@ -54,7 +54,7 @@ namespace CK.WebFrontAuthDynamicScope.App
                 }
 
             }
-            return scopeSet?.Scopes.Where( s => s.Status == ScopeWARStatus.Waiting ).Select( s => s.ScopeName ).ToArray() ?? Array.Empty<string>();
+            return scopeSet?.Scopes.Where( s => s.Status == ScopeWARStatus.Waiting || s.Status == ScopeWARStatus.Accepted ).Select( s => s.ScopeName ).ToArray() ?? Array.Empty<string>();
         }
     }
 }
